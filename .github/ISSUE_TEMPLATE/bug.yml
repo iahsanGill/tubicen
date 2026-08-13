@@ -1,0 +1,27 @@
+name: Bug report
+description: Report incorrect mutation, execution, or report behavior
+title: "bug: "
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Include the original rule, generated mutation, and command where possible.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Tubicen version
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: promtool version
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproduction
+      description: Provide a minimal rule file, test file, and exact command.
+    validations:
+      required: true

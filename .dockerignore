@@ -1,0 +1,8 @@
+.git
+.github
+bin
+dist
+.tubicen
+docs/assets/*.png
+*.prof
+.DS_Store
