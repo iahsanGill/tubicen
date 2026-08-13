@@ -32,7 +32,7 @@ func TestRenderers(t *testing.T) {
 		{name: "json", render: func(w interfaceWriter, r domain.Report) error { return JSON(w, r) }, want: `"schema_version": "1.0"`},
 		{name: "junit", render: func(w interfaceWriter, r domain.Report) error { return JUnit(w, r) }, want: `<failure message="mutant survived`},
 		{name: "sarif", render: func(w interfaceWriter, r domain.Report) error { return SARIF(w, r) }, want: `"version": "2.1.0"`},
-		{name: "html", render: func(w interfaceWriter, r domain.Report) error { return HTML(w, r) }, want: `Tubicen campaign report`},
+		{name: "html", render: func(w interfaceWriter, r domain.Report) error { return HTML(w, r) }, want: `Alert rule test report`},
 	}
 	for _, test := range tests {
 		test := test
@@ -62,7 +62,7 @@ func TestTerminalShowsSurvivor(t *testing.T) {
 	if err := Terminal(&output, sampleReport()); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "[SURVIVED]") || !strings.Contains(output.String(), "50.0%") {
+	if !strings.Contains(output.String(), "[NOT CAUGHT]") || !strings.Contains(output.String(), "50.0%") {
 		t.Fatalf("unexpected terminal report:\n%s", output.String())
 	}
 }

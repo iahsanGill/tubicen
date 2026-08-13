@@ -14,7 +14,7 @@ import (
 	"github.com/iahsanGill/tubicen/internal/domain"
 )
 
-// Terminal writes a compact human-readable campaign report.
+// Terminal writes a compact human-readable test report.
 func Terminal(w io.Writer, report domain.Report) error {
 	summary := report.Summary
 	verdict := "PASS"
@@ -22,7 +22,7 @@ func Terminal(w io.Writer, report domain.Report) error {
 		verdict = "FAIL"
 	}
 
-	if _, err := fmt.Fprintf(w, "\nTubicen mutation report\n\n"); err != nil {
+	if _, err := fmt.Fprintf(w, "\nTubicen alert rule test report\n\n"); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(w, "  Score       %6.1f%%  %s\n", summary.Score, scoreBar(summary.Score)); err != nil {
@@ -31,7 +31,7 @@ func Terminal(w io.Writer, report domain.Report) error {
 	if _, err := fmt.Fprintf(w, "  Gate        %6.1f%%  %s\n", summary.Threshold, verdict); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "  Mutants     %6d  %d killed, %d survived, %d errors, %d timeouts\n", summary.Total, summary.Killed, summary.Survived, summary.Errors, summary.Timeouts); err != nil {
+	if _, err := fmt.Fprintf(w, "  Changes     %6d  %d caught, %d not caught, %d errors, %d timeouts\n", summary.Total, summary.Killed, summary.Survived, summary.Errors, summary.Timeouts); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(w, "  Duration    %6s\n", report.Duration); err != nil {
@@ -40,10 +40,10 @@ func Terminal(w io.Writer, report domain.Report) error {
 
 	problemCount := summary.Survived + summary.Errors + summary.Timeouts
 	if problemCount == 0 {
-		_, err := fmt.Fprintln(w, "\nAll generated defects were detected by the test suite.")
+		_, err := fmt.Fprintln(w, "\nAll rule changes were caught by the test suite.")
 		return err
 	}
-	if _, err := fmt.Fprint(w, "\nSurvivors and execution problems:\n\n"); err != nil {
+	if _, err := fmt.Fprint(w, "\nChanges not caught and test errors:\n\n"); err != nil {
 		return err
 	}
 	for _, result := range report.Results {
@@ -51,7 +51,11 @@ func Terminal(w io.Writer, report domain.Report) error {
 			continue
 		}
 		mutation := result.Mutation
-		if _, err := fmt.Fprintf(w, "  [%s] %s/%s  %s  (%s:%d)\n", strings.ToUpper(string(result.Status)), mutation.Group, mutation.Alert, mutation.Operator, filepath.Base(mutation.RuleFile), mutation.Line); err != nil {
+		status := strings.ToUpper(string(result.Status))
+		if result.Status == domain.StatusSurvived {
+			status = "NOT CAUGHT"
+		}
+		if _, err := fmt.Fprintf(w, "  [%s] %s/%s  %s  (%s:%d)\n", status, mutation.Group, mutation.Alert, mutation.Operator, filepath.Base(mutation.RuleFile), mutation.Line); err != nil {
 			return err
 		}
 		if _, err := fmt.Fprintf(w, "      %s\n", mutation.Description); err != nil {
@@ -155,7 +159,7 @@ func SARIF(w io.Writer, report domain.Report) error {
 	return encoder.Encode(document)
 }
 
-// HTML writes a self-contained campaign report.
+// HTML writes a self-contained test report.
 func HTML(w io.Writer, report domain.Report) error {
 	functions := template.FuncMap{
 		"upper": strings.ToUpper,
@@ -318,7 +322,7 @@ const htmlTemplate = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tubicen campaign report</title>
+  <title>Tubicen alert rule test report</title>
   <style>
     :root { color-scheme:light; --ink:#20231f; --ink-2:#343a34; --paper:#f0eee8; --sheet:#f9f8f4; --line:#c9c7bd; --line-dark:#85877f; --quiet:#6d716a; --oxide:#9d3f2b; --green:#2e6048; --brass:#a87c37; }
     * { box-sizing:border-box; }
@@ -390,47 +394,47 @@ const htmlTemplate = `<!doctype html>
 <main>
   <header class="masthead">
     <div class="brand"><div class="sigil">T</div><div><p class="brand-name">Tubicen</p><p class="brand-line">Prometheus alert mutation tester</p></div></div>
-    <div class="document-id"><strong>Campaign record</strong><br>{{.StartedAt.Format "2006-01-02 / 15:04 UTC"}}</div>
+    <div class="document-id"><strong>Test run</strong><br>{{.StartedAt.Format "2006-01-02 / 15:04 UTC"}}</div>
   </header>
 
   <section class="brief">
     <div class="brief-main">
-      <p class="section-tag">Mutation campaign / final record</p>
-      <h1>Tubicen campaign report</h1>
-      <p class="lede">A controlled fault-injection audit of {{len .RuleFiles}} Prometheus rule file{{if ne (len .RuleFiles) 1}}s{{end}} against {{len .TestFiles}} reference test suite{{if ne (len .TestFiles) 1}}s{{end}}. Each result records whether the tests detected one deliberate semantic defect.</p>
+      <p class="section-tag">Prometheus alert rule tests</p>
+      <h1>Alert rule test report</h1>
+      <p class="lede">Tubicen changed {{len .RuleFiles}} Prometheus rule file{{if ne (len .RuleFiles) 1}}s{{end}}, one change at a time, and reran {{len .TestFiles}} test file{{if ne (len .TestFiles) 1}}s{{end}}. The results show which rule changes the current tests caught and which ones they missed.</p>
     </div>
     <aside class="gate">
       <span class="gate-label">Quality gate / {{printf "%.1f" .Summary.Threshold}}%</span>
-      <strong class="gate-value {{if .Summary.PassedGate}}pass{{else}}fail{{end}}">{{if .Summary.PassedGate}}VERIFIED{{else}}REJECTED{{end}}</strong>
-      <span class="gate-note">{{if .Summary.PassedGate}}Threshold met. No execution faults.{{else}}Threshold missed or execution faults present.{{end}}</span>
+      <strong class="gate-value {{if .Summary.PassedGate}}pass{{else}}fail{{end}}">{{if .Summary.PassedGate}}PASS{{else}}FAIL{{end}}</strong>
+      <span class="gate-note">{{if .Summary.PassedGate}}Required score met. No test errors.{{else}}Required score missed or test errors found.{{end}}</span>
     </aside>
   </section>
 
-  <section class="scoreboard" aria-label="Campaign summary">
-    <div class="score-cell primary"><label>Mutation resistance</label><strong>{{printf "%.1f" .Summary.Score}}<small>%</small></strong><div class="scale" aria-hidden="true"><i style="width:{{printf "%.1f" .Summary.Score}}%"></i></div></div>
-    <div class="score-cell"><label>Mutants issued</label><strong>{{.Summary.Total}}</strong></div>
-    <div class="score-cell"><label>Detected</label><strong>{{.Summary.Killed}}</strong></div>
-    <div class="score-cell"><label>Escaped</label><strong class="{{if eq .Summary.Survived 0}}zero{{end}}">{{.Summary.Survived}}</strong></div>
-    <div class="score-cell"><label>Runtime faults</label><strong>{{sum .Summary.Errors .Summary.Timeouts}}</strong></div>
+  <section class="scoreboard" aria-label="Test summary">
+    <div class="score-cell primary"><label>Test score</label><strong>{{printf "%.1f" .Summary.Score}}<small>%</small></strong><div class="scale" aria-hidden="true"><i style="width:{{printf "%.1f" .Summary.Score}}%"></i></div></div>
+    <div class="score-cell"><label>Changes tested</label><strong>{{.Summary.Total}}</strong></div>
+    <div class="score-cell"><label>Caught by tests</label><strong>{{.Summary.Killed}}</strong></div>
+    <div class="score-cell"><label>Not caught</label><strong class="{{if eq .Summary.Survived 0}}zero{{end}}">{{.Summary.Survived}}</strong></div>
+    <div class="score-cell"><label>Test errors</label><strong>{{sum .Summary.Errors .Summary.Timeouts}}</strong></div>
   </section>
 
   <section class="workspace">
     <div class="workspace-head">
-      <div><p class="section-tag">Result ledger</p><h2 class="workspace-title">Every injected defect</h2></div>
-      <nav class="filters" aria-label="Filter campaign results">
+      <div><p class="section-tag">Test results</p><h2 class="workspace-title">Changes and test outcomes</h2></div>
+      <nav class="filters" aria-label="Filter test results">
         <button class="active" data-filter="all" aria-pressed="true">All / {{.Summary.Total}}</button>
-        <button data-filter="survived" aria-pressed="false">Escaped / {{.Summary.Survived}}</button>
-        <button data-filter="killed" aria-pressed="false">Detected / {{.Summary.Killed}}</button>
-        <button data-filter="problem" aria-pressed="false">Faults / {{sum .Summary.Errors .Summary.Timeouts}}</button>
+        <button data-filter="survived" aria-pressed="false">Not caught / {{.Summary.Survived}}</button>
+        <button data-filter="killed" aria-pressed="false">Caught / {{.Summary.Killed}}</button>
+        <button data-filter="problem" aria-pressed="false">Errors / {{sum .Summary.Errors .Summary.Timeouts}}</button>
       </nav>
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Outcome</th><th>Alert / source</th><th>Injected defect</th><th>Original → replacement</th><th>Elapsed</th></tr></thead>
+        <thead><tr><th>Result</th><th>Alert / source</th><th>Change tested</th><th>Before → after</th><th>Time</th></tr></thead>
         <tbody>
         {{range .Results}}
           <tr data-status="{{class .Status}}">
-            <td><span class="status {{class .Status}}">{{if eq (class .Status) "killed"}}DETECTED{{else if eq (class .Status) "survived"}}ESCAPED{{else}}{{upper (class .Status)}}{{end}}</span></td>
+            <td><span class="status {{class .Status}}">{{if eq (class .Status) "killed"}}CAUGHT{{else if eq (class .Status) "survived"}}NOT CAUGHT{{else}}{{upper (class .Status)}}{{end}}</span></td>
             <td><div class="alert">{{.Mutation.Alert}}</div><div class="secondary">{{.Mutation.Group}} / {{base .Mutation.RuleFile}}:{{.Mutation.Line}}</div></td>
             <td><code class="operator">{{.Mutation.Operator}}</code><div class="secondary">{{.Mutation.Description}}</div></td>
             <td class="change"><code>{{.Mutation.Original}}</code><span class="arrow">→</span><code>{{.Mutation.Replacement}}</code></td>

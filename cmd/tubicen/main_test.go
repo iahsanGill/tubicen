@@ -100,7 +100,7 @@ exit 0
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1; stderr = %s\nstdout = %s", code, stderr.String(), stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "FAIL") || !strings.Contains(stdout.String(), "survived") {
+	if !strings.Contains(stdout.String(), "FAIL") || !strings.Contains(stdout.String(), "not caught") {
 		t.Fatalf("missing failed gate report:\n%s", stdout.String())
 	}
 }
