@@ -1,0 +1,33 @@
+rule_files:
+  - ../rules/alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: alerts during an obvious outage
+    interval: 1m
+    input_series:
+      - series: 'checkout_error_ratio{service="checkout",environment="production"}'
+        values: '0.10x15'
+      - series: 'up{service="checkout",environment="production",instance="checkout-1"}'
+        values: '0x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              environment: production
+              service: checkout
+              severity: page
+              team: payments
+            exp_annotations:
+              summary: Checkout error ratio is above five percent
+      - eval_time: 10m
+        alertname: CheckoutReplicaDown
+        exp_alerts:
+          - exp_labels:
+              service: checkout
+              severity: ticket
+              team: payments
+            exp_annotations:
+              summary: At least one checkout replica is unavailable

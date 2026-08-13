@@ -1,0 +1,114 @@
+rule_files:
+  - ../rules/alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: sustained error burn fires only after the hold period
+    interval: 1m
+    input_series:
+      - series: 'checkout_error_ratio{service="checkout",environment="production"}'
+        values: '0.10x15'
+      - series: 'checkout_error_ratio{service="checkout",environment="staging"}'
+        values: '0.90x15'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              environment: production
+              service: checkout
+              severity: page
+              team: payments
+            exp_annotations:
+              summary: Checkout error ratio is above five percent
+
+  - name: exact threshold is not considered a burn
+    interval: 1m
+    input_series:
+      - series: 'checkout_error_ratio{service="checkout",environment="production"}'
+        values: '0.05x12'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts: []
+
+  - name: a four percent ratio stays below the alert threshold
+    interval: 1m
+    input_series:
+      - series: 'checkout_error_ratio{service="checkout",environment="production"}'
+        values: '0.04x12'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts: []
+
+  - name: a recent spike has not satisfied the hold period
+    interval: 1m
+    input_series:
+      - series: 'checkout_error_ratio{service="checkout",environment="production"}'
+        values: '0x4 0.10x8'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts: []
+
+  - name: the five minute window does not clear a recovered burn too early
+    interval: 1m
+    input_series:
+      - series: 'checkout_error_ratio{service="checkout",environment="production"}'
+        values: '0.10x6 0x8'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              environment: production
+              service: checkout
+              severity: page
+              team: payments
+            exp_annotations:
+              summary: Checkout error ratio is above five percent
+
+  - name: the five minute window detects a sustained burn without excess lag
+    interval: 1m
+    input_series:
+      - series: 'checkout_error_ratio{service="checkout",environment="production"}'
+        values: '0x5 0.10x12'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              environment: production
+              service: checkout
+              severity: page
+              team: payments
+            exp_annotations:
+              summary: Checkout error ratio is above five percent
+
+  - name: a single failed replica triggers the fleet minimum
+    interval: 1m
+    input_series:
+      - series: 'up{service="checkout",environment="production",instance="checkout-1"}'
+        values: '1x12'
+      - series: 'up{service="checkout",environment="production",instance="checkout-2"}'
+        values: '0x12'
+      - series: 'up{service="checkout",environment="staging",instance="checkout-staging-1"}'
+        values: '1x12'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: CheckoutReplicaDown
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: CheckoutReplicaDown
+        exp_alerts:
+          - exp_labels:
+              service: checkout
+              severity: ticket
+              team: payments
+            exp_annotations:
+              summary: At least one checkout replica is unavailable
