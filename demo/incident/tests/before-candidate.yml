@@ -1,0 +1,21 @@
+rule_files:
+  - ../rules/candidate.yml
+
+evaluation_interval: 5s
+
+tests:
+  - name: checkout is completely unavailable
+    interval: 5s
+    input_series:
+      - series: 'up{service="checkout",environment="production",instance="checkout-1"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 15s
+        alertname: CheckoutReplicaDown
+        exp_alerts:
+          - exp_labels:
+              service: checkout
+              severity: page
+              team: payments
+            exp_annotations:
+              summary: A checkout replica is unavailable

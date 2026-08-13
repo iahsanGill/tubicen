@@ -5,7 +5,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf none)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(BUILD_DATE)
 
-.PHONY: all build test race vet fmt-check check e2e demo reports clean
+.PHONY: all build test race vet fmt-check check policy e2e demo demo-full reports clean
 
 all: check build
 
@@ -27,6 +27,9 @@ fmt-check:
 
 check: fmt-check vet test race
 
+policy: build
+	./bin/tubicen check --config .tubicen.yml
+
 e2e: build
 	./bin/tubicen run \
 		--rules examples/rules/alerts.yml \
@@ -36,6 +39,9 @@ e2e: build
 		--quiet
 
 demo:
+	./demo/incident/run.sh
+
+demo-full:
 	./demo/verify.sh
 
 reports: build
@@ -43,9 +49,7 @@ reports: build
 	./bin/tubicen run \
 		--rules examples/rules/alerts.yml \
 		--tests examples/tests/strong.yml \
-		--promtool $(PROMTOOL) \
-		--threshold 100 \
-		--quiet \
+		--promtool $(PROMTOOL) --threshold 100 --quiet \
 		--json dist/report.json \
 		--junit dist/report.xml \
 		--sarif dist/report.sarif \

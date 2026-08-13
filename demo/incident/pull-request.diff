@@ -1,0 +1,5 @@
+--- a/alerts.yml
++++ b/alerts.yml
+@@
+-        expr: min by (service) (up{service="checkout",environment="production"}) == 0
++        expr: max by (service) (up{service="checkout",environment="production"}) == 0

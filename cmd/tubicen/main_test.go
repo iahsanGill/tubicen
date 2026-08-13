@@ -38,7 +38,7 @@ func TestListMutations(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
 	}
-	for _, want := range []string{"HighErrorRate", "threshold.scale-up", "for.remove", "mutants across 1 rule file"} {
+	for _, want := range []string{"HighErrorRate", "Alert threshold", "Time before alerting", "rule changes across 1 rule file"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("output does not contain %q:\n%s", want, stdout.String())
 		}
@@ -102,6 +102,48 @@ exit 0
 	}
 	if !strings.Contains(stdout.String(), "FAIL") || !strings.Contains(stdout.String(), "not caught") {
 		t.Fatalf("missing failed gate report:\n%s", stdout.String())
+	}
+}
+
+func TestCheckLoadsRepositoryPolicy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test helper uses a POSIX shell")
+	}
+	temp := t.TempDir()
+	mustWrite(t, filepath.Join(temp, "alerts.yml"), `groups:
+- name: api
+  rules:
+  - alert: HighLatency
+    expr: request_latency_seconds > 1
+`)
+	mustWrite(t, filepath.Join(temp, "alerts_test.yml"), `rule_files:
+- alerts.yml
+tests: []
+`)
+	promtoolPath := filepath.Join(temp, "promtool")
+	mustWrite(t, promtoolPath, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"promtool test-double\"; fi\nexit 0\n")
+	if err := os.Chmod(promtoolPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(temp, ".tubicen.yml"), `rules: [alerts.yml]
+tests: [alerts_test.yml]
+promtool: ./promtool
+threshold: 0
+quiet: true
+reports:
+  json: artifacts/report.json
+`)
+
+	var stdout, stderr bytes.Buffer
+	code := execute(context.Background(), []string{"check", "--config", filepath.Join(temp, ".tubicen.yml")}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d; stderr = %s\nstdout = %s", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "PASS") {
+		t.Fatalf("missing passed gate report:\n%s", stdout.String())
+	}
+	if _, err := os.Stat(filepath.Join(temp, "artifacts", "report.json")); err != nil {
+		t.Fatalf("JSON report was not written: %v", err)
 	}
 }
 

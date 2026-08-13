@@ -1,0 +1,10 @@
+rules:
+  - rules/expected.yml
+tests:
+  - tests/after.yml
+
+only:
+  - aggregation
+threshold: 100
+quiet: true
+

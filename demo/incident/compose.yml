@@ -1,0 +1,67 @@
+name: tubicen-incident
+
+services:
+  checkout-1:
+    build:
+      context: ../..
+      dockerfile: demo/checkout-api.Dockerfile
+    ports:
+      - "${TUBICEN_INCIDENT_CHECKOUT_1_PORT:-18180}:8080"
+
+  checkout-2:
+    build:
+      context: ../..
+      dockerfile: demo/checkout-api.Dockerfile
+    ports:
+      - "${TUBICEN_INCIDENT_CHECKOUT_2_PORT:-18181}:8080"
+
+  prometheus-candidate:
+    image: prom/prometheus:v3.13.2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    ports:
+      - "${TUBICEN_INCIDENT_CANDIDATE_PORT:-19190}:9090"
+    volumes:
+      - ./prometheus/candidate.yml:/etc/prometheus/prometheus.yml:ro
+      - ./rules/candidate.yml:/etc/prometheus/alerts.yml:ro
+    depends_on:
+      - checkout-1
+      - checkout-2
+      - alertmanager
+
+  prometheus-expected:
+    image: prom/prometheus:v3.13.2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    ports:
+      - "${TUBICEN_INCIDENT_EXPECTED_PORT:-19191}:9090"
+    volumes:
+      - ./prometheus/expected.yml:/etc/prometheus/prometheus.yml:ro
+      - ./rules/expected.yml:/etc/prometheus/alerts.yml:ro
+    depends_on:
+      - checkout-1
+      - checkout-2
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:v0.33.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    ports:
+      - "${TUBICEN_INCIDENT_ALERTMANAGER_PORT:-19193}:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+
+  tubicen:
+    profiles: [tools]
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: cli
+    working_dir: /workspace
+    volumes:
+      - ../..:/workspace:ro
+    entrypoint: ["tubicen"]

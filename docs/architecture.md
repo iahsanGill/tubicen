@@ -1,6 +1,29 @@
 # Architecture
 
-Tubicen is a local, deterministic mutation-testing pipeline for Prometheus alert rules. It deliberately keeps rule transformation separate from execution: the mutation engine understands PromQL, while Prometheus' own `promtool` remains the authority for rule validity and test behavior.
+Tubicen is a short-lived repository check for Prometheus alert rules. Its main deployment target is pull-request CI: read a checked-in policy, test the alert rules, report findings on the changed lines, and return an exit code that can block a merge.
+
+It has no long-running server, database, login, or production data connection. The HTML output is an optional saved report, not the operating interface.
+
+Rule transformation is separate from execution: the change generator understands PromQL, while Prometheus' own `promtool` remains the authority for rule validity and test behavior.
+
+## Where it runs
+
+```mermaid
+flowchart LR
+    DEV["Engineer changes alert rules"] --> PR["Pull request"]
+    PR --> ACTION["Tubicen CI container"]
+    REPO["Rules, tests, and .tubicen.yml"] --> ACTION
+    ACTION --> PROMTOOL["Bundled promtool"]
+    PROMTOOL --> EXIT["Pass or block merge"]
+    ACTION --> ANNOTATION["Finding on rule line"]
+    ACTION --> FILES["JSON, JUnit, and SARIF artifacts"]
+    PR --> DEPLOY["Existing deployment pipeline"]
+    EXIT -->|"pass"| DEPLOY
+    DEPLOY --> PROM["Prometheus"]
+    PROM --> AM["Alertmanager"]
+```
+
+Tubicen runs before the existing deployment pipeline. It does not sit between Prometheus and Alertmanager and does not receive live metrics. This keeps failure impact small: if Tubicen is unavailable, CI fails or is retried; production monitoring continues unchanged.
 
 ## System boundary
 
@@ -9,7 +32,7 @@ flowchart TB
     subgraph Input
         R["Rule files"]
         T["promtool test files"]
-        O["Campaign options"]
+        O[".tubicen.yml policy"]
     end
 
     subgraph Tubicen
@@ -20,7 +43,7 @@ flowchart TB
         W["Bounded worker pool"]
         X["Test-file rewriter"]
         S["Scorer"]
-        RP["Report renderers"]
+        RP["Exit code, annotations, and reports"]
     end
 
     subgraph Reference engine
@@ -43,6 +66,7 @@ Tubicen does not reimplement PromQL evaluation. That would create a second seman
 
 ```mermaid
 sequenceDiagram
+    participant CI
     participant CLI
     participant Campaign
     participant Generator
@@ -50,6 +74,7 @@ sequenceDiagram
     participant Promtool
     participant Reporter
 
+    CI->>CLI: tubicen check --config .tubicen.yml
     CLI->>Campaign: rules, tests, filters, threshold
     Campaign->>Promtool: --version
     Campaign->>Promtool: check original rules
@@ -64,6 +89,7 @@ sequenceDiagram
     end
     Campaign->>Reporter: ordered results and score
     Reporter-->>CLI: terminal and machine reports
+    CLI-->>CI: exit 0, 1, or 2
 ```
 
 ### 1. Baseline validation
@@ -129,17 +155,19 @@ The campaign stores results in generation order even when workers finish out of 
 
 | Package | Responsibility |
 | --- | --- |
-| `cmd/tubicen` | CLI parsing, process exit contract, progress, report destinations |
+| `cmd/tubicen` | Repository policy command, CLI parsing, process exit contract, progress, report destinations |
+| `internal/config` | Strict `.tubicen.yml` loading and repository-relative path resolution |
 | `internal/domain` | Mutation, result, summary, and report schema |
 | `internal/rules` | Loss-minimizing YAML load, alert indexing, single-mutation render |
 | `internal/mutation` | PromQL AST traversal, mutation operators, stable identities |
 | `internal/promtool` | Reference process execution, timeouts, test-file path rewriting |
 | `internal/campaign` | Baseline gate, filtering, concurrency, deterministic collection, scoring |
-| `internal/report` | Terminal, JSON, JUnit, SARIF, and HTML encoders |
+| `internal/report` | Terminal, GitHub annotations, JSON, JUnit, SARIF, and optional HTML encoders |
 
 ## Failure and trust model
 
 - `promtool` is treated as an external trusted reference executable. Its path is explicit with `--promtool` and its version is recorded in every report.
+- The Dockerfile has separate runtime targets. `cli` drops to an unprivileged user for local and scheduled runs. `action` uses the default container user because GitHub requires it to access `GITHUB_WORKSPACE`.
 - Commands use argument arrays rather than a shell, so rule and test paths are not evaluated as shell input.
 - Each command has its own context deadline. Cancellation propagates from SIGINT or SIGTERM.
 - Temporary directories use OS-generated names and are removed after each mutant.

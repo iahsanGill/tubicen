@@ -1,0 +1,22 @@
+name: Tubicen alert rule check
+description: Block Prometheus alert-rule changes that the current tests cannot detect
+author: Ahsan Gill
+
+inputs:
+  config:
+    description: Path to the Tubicen policy file in the checked-out repository
+    required: false
+    default: .tubicen.yml
+
+runs:
+  using: docker
+  image: Dockerfile
+  args:
+    - check
+    - --config
+    - ${{ inputs.config }}
+
+branding:
+  icon: shield
+  color: gray-dark
+

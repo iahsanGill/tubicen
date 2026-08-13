@@ -8,9 +8,6 @@ on:
 permissions:
   contents: read
 
-env:
-  PROMETHEUS_VERSION: v3.13.2
-
 jobs:
   test:
     name: Go checks
@@ -30,56 +27,24 @@ jobs:
       - name: Build
         run: go build -trimpath ./cmd/tubicen
 
-  end-to-end:
-    name: Prometheus reference campaign
+  policy-gate:
+    name: Alert rule policy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Extract pinned promtool
-        run: |
-          docker create --name tubicen-promtool "prom/prometheus:${PROMETHEUS_VERSION}"
-          docker cp tubicen-promtool:/bin/promtool /tmp/promtool
-          docker rm tubicen-promtool
-          chmod +x /tmp/promtool
-      - name: Run 100 percent mutation gate
-        run: |
-          go run ./cmd/tubicen run \
-            --rules examples/rules/alerts.yml \
-            --tests examples/tests/strong.yml \
-            --promtool /tmp/promtool \
-            --threshold 100 \
-            --quiet \
-            --json dist/report.json \
-            --junit dist/report.xml \
-            --sarif dist/report.sarif \
-            --html dist/report.html
+      - name: Enforce repository alert policy
+        uses: ./
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: tubicen-reports
+          name: alert-rule-check
           path: dist/
 
-  container:
-    name: Container build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Build image
-        run: docker build -t tubicen:ci .
-      - name: Verify embedded tools
-        run: |
-          docker run --rm tubicen:ci version
-          docker run --rm --entrypoint /usr/local/bin/promtool tubicen:ci --version
-
-  production-demo:
-    name: Production-style monitoring demo
+  incident-demo:
+    name: Missed on-call page incident
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - name: Run live Prometheus and Alertmanager demo
-        run: ./demo/verify.sh
+      - name: Reproduce and prevent the incident
+        run: ./demo/incident/run.sh

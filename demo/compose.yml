@@ -46,6 +46,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      target: cli
     working_dir: /workspace
     volumes:
       - ..:/workspace:ro

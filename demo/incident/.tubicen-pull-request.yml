@@ -1,0 +1,10 @@
+rules:
+  - rules/candidate.yml
+tests:
+  - tests/before-candidate.yml
+
+only:
+  - aggregation
+threshold: 100
+quiet: true
+

@@ -55,10 +55,10 @@ func Terminal(w io.Writer, report domain.Report) error {
 		if result.Status == domain.StatusSurvived {
 			status = "NOT CAUGHT"
 		}
-		if _, err := fmt.Fprintf(w, "  [%s] %s/%s  %s  (%s:%d)\n", status, mutation.Group, mutation.Alert, mutation.Operator, filepath.Base(mutation.RuleFile), mutation.Line); err != nil {
+		if _, err := fmt.Fprintf(w, "  [%s] %s/%s  %s  (%s:%d)\n", status, mutation.Group, mutation.Alert, ChangeType(mutation.Operator), filepath.Base(mutation.RuleFile), mutation.Line); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "      %s\n", mutation.Description); err != nil {
+		if _, err := fmt.Fprintf(w, "      %s\n", PlainChange(mutation)); err != nil {
 			return err
 		}
 		if mutation.Original != "" || mutation.Replacement != "" {
@@ -103,7 +103,7 @@ func JUnit(w io.Writer, report domain.Report) error {
 		switch result.Status {
 		case domain.StatusSurvived:
 			item.Failure = &junitFailure{
-				Message: "mutant survived: " + mutation.Description,
+				Message: "alert rule change not caught: " + PlainChange(mutation),
 				Body:    mutation.Original + " -> " + mutation.Replacement,
 			}
 		case domain.StatusError, domain.StatusTimeout:
@@ -132,13 +132,13 @@ func SARIF(w io.Writer, report domain.Report) error {
 		if !knownRules[mutation.Operator] {
 			run.Tool.Driver.Rules = append(run.Tool.Driver.Rules, sarifRule{
 				ID:               mutation.Operator,
-				ShortDescription: sarifMessage{Text: "Prometheus alert mutation survived"},
-				HelpURI:          "https://github.com/iahsanGill/tubicen#mutation-operators",
+				ShortDescription: sarifMessage{Text: "Alert rule change was not caught by tests"},
+				HelpURI:          "https://github.com/iahsanGill/tubicen#changes-currently-tested",
 			})
 			knownRules[mutation.Operator] = true
 		}
 		level := "warning"
-		message := fmt.Sprintf("Mutant survived: %s (%s -> %s)", mutation.Description, mutation.Original, mutation.Replacement)
+		message := fmt.Sprintf("Tests did not catch this rule change: %s (%s -> %s)", PlainChange(mutation), mutation.Original, mutation.Replacement)
 		if result.Status == domain.StatusError || result.Status == domain.StatusTimeout {
 			level = "error"
 			message = fmt.Sprintf("Mutation execution %s: %s", result.Status, firstLine(result.Output))
@@ -166,7 +166,11 @@ func HTML(w io.Writer, report domain.Report) error {
 		"base":  filepath.Base,
 		"first": firstLine,
 		"sum":   func(left, right int) int { return left + right },
-		"class": func(status domain.Status) string { return string(status) },
+		"changeType": func(mutation domain.Mutation) string {
+			return ChangeType(mutation.Operator)
+		},
+		"plainChange": PlainChange,
+		"class":       func(status domain.Status) string { return string(status) },
 		"fmtDuration": func(value time.Duration) string {
 			return value.Round(time.Millisecond).String()
 		},
@@ -194,6 +198,34 @@ func WriteFile(path string, report domain.Report, render func(io.Writer, domain.
 	}
 	defer file.Close()
 	return render(file, report)
+}
+
+// GitHubAnnotations writes workflow commands that attach failed checks to the
+// changed rule lines in a pull request.
+func GitHubAnnotations(w io.Writer, report domain.Report) error {
+	for _, result := range report.Results {
+		if result.Status == domain.StatusKilled {
+			continue
+		}
+		mutation := result.Mutation
+		title := "Alert rule change not caught"
+		message := PlainChange(mutation)
+		if result.Status == domain.StatusError || result.Status == domain.StatusTimeout {
+			title = "Alert rule check failed"
+			message = firstLine(result.Output)
+		}
+		if _, err := fmt.Fprintf(
+			w,
+			"::error file=%s,line=%d,title=%s::%s\n",
+			workflowProperty(artifactURI(mutation.RuleFile)),
+			max(mutation.Line, 1),
+			workflowProperty(title),
+			workflowMessage(message),
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func scoreBar(score float64) string {
@@ -227,6 +259,74 @@ func artifactURI(path string) string {
 		}
 	}
 	return filepath.ToSlash(path)
+}
+
+// ChangeType gives an operator family a production-facing label.
+func ChangeType(operator string) string {
+	switch {
+	case strings.HasPrefix(operator, "aggregation"):
+		return "How replicas are checked"
+	case strings.HasPrefix(operator, "comparison"):
+		return "Alert condition"
+	case strings.HasPrefix(operator, "threshold"):
+		return "Alert threshold"
+	case strings.HasPrefix(operator, "for."):
+		return "Time before alerting"
+	case strings.HasPrefix(operator, "range."):
+		return "Metric time window"
+	case strings.HasPrefix(operator, "selector"):
+		return "Metrics included"
+	case strings.HasPrefix(operator, "function"):
+		return "Metric calculation"
+	case strings.HasPrefix(operator, "logical"):
+		return "Combined conditions"
+	default:
+		return "Rule behavior"
+	}
+}
+
+// PlainChange explains a generated change without mutation-testing jargon.
+func PlainChange(mutation domain.Mutation) string {
+	switch mutation.Operator {
+	case "aggregation.replace":
+		if mutation.Original == "min" && mutation.Replacement == "max" {
+			return "Check the healthiest replica instead of the least healthy replica"
+		}
+		if mutation.Original == "max" && mutation.Replacement == "min" {
+			return "Check the least healthy replica instead of the healthiest replica"
+		}
+		return fmt.Sprintf("Change the group calculation from %s to %s", mutation.Original, mutation.Replacement)
+	case "comparison.replace":
+		return fmt.Sprintf("Change the alert condition from %s to %s", mutation.Original, mutation.Replacement)
+	case "for.remove":
+		return "Remove the wait before the alert fires"
+	case "for.add":
+		return fmt.Sprintf("Add a %s wait before the alert fires", mutation.Replacement)
+	case "for.contract", "for.expand":
+		return fmt.Sprintf("Change the wait before alerting from %s to %s", mutation.Original, mutation.Replacement)
+	case "range.contract", "range.expand":
+		return fmt.Sprintf("Change the metric time window from %s to %s", mutation.Original, mutation.Replacement)
+	case "threshold.scale-up", "threshold.scale-down", "threshold.shift-up", "threshold.shift-down":
+		return fmt.Sprintf("Change the alert threshold from %s to %s", mutation.Original, mutation.Replacement)
+	case "selector.negate":
+		return fmt.Sprintf("Change which metrics are included: %s becomes %s", mutation.Original, mutation.Replacement)
+	case "function.replace":
+		return fmt.Sprintf("Change the metric calculation from %s to %s", mutation.Original, mutation.Replacement)
+	case "logical.replace":
+		return fmt.Sprintf("Change how conditions are combined from %s to %s", mutation.Original, mutation.Replacement)
+	default:
+		return mutation.Description
+	}
+}
+
+func workflowProperty(value string) string {
+	replacer := strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A", ":", "%3A", ",", "%2C")
+	return replacer.Replace(value)
+}
+
+func workflowMessage(value string) string {
+	replacer := strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A")
+	return replacer.Replace(value)
 }
 
 func seconds(duration string) string {
@@ -377,6 +477,7 @@ const htmlTemplate = `<!doctype html>
     .killed { color:var(--green); } .survived { color:var(--oxide); } .error,.timeout { color:var(--brass); }
     .alert { font-weight:700; }
     .secondary { margin-top:5px; color:var(--quiet); font-size:12px; }
+    .technical { margin-top:6px; color:#8b8d87; font:9px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace; }
     code { padding:2px 4px; color:var(--ink-2); background:#e9e8e2; font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace; }
     .operator { display:inline-block; margin-bottom:2px; }
     .change { white-space:nowrap; }
@@ -393,7 +494,7 @@ const htmlTemplate = `<!doctype html>
 <div class="top-rule"></div>
 <main>
   <header class="masthead">
-    <div class="brand"><div class="sigil">T</div><div><p class="brand-name">Tubicen</p><p class="brand-line">Prometheus alert mutation tester</p></div></div>
+    <div class="brand"><div class="sigil">T</div><div><p class="brand-name">Tubicen</p><p class="brand-line">Prometheus alert rule test</p></div></div>
     <div class="document-id"><strong>Test run</strong><br>{{.StartedAt.Format "2006-01-02 / 15:04 UTC"}}</div>
   </header>
 
@@ -436,7 +537,7 @@ const htmlTemplate = `<!doctype html>
           <tr data-status="{{class .Status}}">
             <td><span class="status {{class .Status}}">{{if eq (class .Status) "killed"}}CAUGHT{{else if eq (class .Status) "survived"}}NOT CAUGHT{{else}}{{upper (class .Status)}}{{end}}</span></td>
             <td><div class="alert">{{.Mutation.Alert}}</div><div class="secondary">{{.Mutation.Group}} / {{base .Mutation.RuleFile}}:{{.Mutation.Line}}</div></td>
-            <td><code class="operator">{{.Mutation.Operator}}</code><div class="secondary">{{.Mutation.Description}}</div></td>
+            <td><div class="alert">{{changeType .Mutation}}</div><div class="secondary">{{plainChange .Mutation}}</div><div class="technical">{{.Mutation.Operator}}</div></td>
             <td class="change"><code>{{.Mutation.Original}}</code><span class="arrow">→</span><code>{{.Mutation.Replacement}}</code></td>
             <td class="duration">{{fmtDuration .Duration}}</td>
           </tr>

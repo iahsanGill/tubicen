@@ -88,7 +88,7 @@ func Run(ctx context.Context, options Options) (domain.Report, error) {
 		mutations = mutations[:options.Limit]
 	}
 	if len(mutations) == 0 {
-		return domain.Report{}, fmt.Errorf("no mutants selected")
+		return domain.Report{}, fmt.Errorf("no rule changes selected")
 	}
 
 	runner := promtool.NewRunner(options.Promtool, options.Timeout)

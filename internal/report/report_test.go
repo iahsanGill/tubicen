@@ -30,7 +30,7 @@ func TestRenderers(t *testing.T) {
 		want   string
 	}{
 		{name: "json", render: func(w interfaceWriter, r domain.Report) error { return JSON(w, r) }, want: `"schema_version": "1.0"`},
-		{name: "junit", render: func(w interfaceWriter, r domain.Report) error { return JUnit(w, r) }, want: `<failure message="mutant survived`},
+		{name: "junit", render: func(w interfaceWriter, r domain.Report) error { return JUnit(w, r) }, want: `<failure message="alert rule change not caught`},
 		{name: "sarif", render: func(w interfaceWriter, r domain.Report) error { return SARIF(w, r) }, want: `"version": "2.1.0"`},
 		{name: "html", render: func(w interfaceWriter, r domain.Report) error { return HTML(w, r) }, want: `Alert rule test report`},
 	}
@@ -64,5 +64,34 @@ func TestTerminalShowsSurvivor(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "[NOT CAUGHT]") || !strings.Contains(output.String(), "50.0%") {
 		t.Fatalf("unexpected terminal report:\n%s", output.String())
+	}
+}
+
+func TestPlainChangeExplainsReplicaAggregation(t *testing.T) {
+	t.Parallel()
+	mutation := domain.Mutation{Operator: "aggregation.replace", Original: "min", Replacement: "max"}
+	if got := ChangeType(mutation.Operator); got != "How replicas are checked" {
+		t.Fatalf("change type = %q", got)
+	}
+	if got := PlainChange(mutation); got != "Check the healthiest replica instead of the least healthy replica" {
+		t.Fatalf("plain change = %q", got)
+	}
+}
+
+func TestGitHubAnnotationsPointToMissedChange(t *testing.T) {
+	t.Parallel()
+	report := sampleReport()
+	report.Results[1].Mutation.RuleFile = "rules/checkout.yml"
+	var output bytes.Buffer
+	if err := GitHubAnnotations(&output, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"::error file=rules/checkout.yml,line=8,title=Alert rule change not caught::",
+		"Change the alert threshold from 5 to 50",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("annotation does not contain %q:\n%s", want, output.String())
+		}
 	}
 }

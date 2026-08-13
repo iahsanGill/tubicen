@@ -1,0 +1,15 @@
+# Repository policy used by `tubicen check` and the GitHub Action.
+rules:
+  - examples/rules/alerts.yml
+tests:
+  - examples/tests/strong.yml
+
+threshold: 100
+workers: 4
+timeout: 30s
+quiet: true
+
+reports:
+  json: dist/tubicen.json
+  junit: dist/tubicen.xml
+  sarif: dist/tubicen.sarif

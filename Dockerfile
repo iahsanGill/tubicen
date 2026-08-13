@@ -1,6 +1,4 @@
 # syntax=docker/dockerfile:1
-ARG PROMETHEUS_VERSION=v3.13.2
-
 FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -20,11 +18,17 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE}" \
     -o /out/tubicen ./cmd/tubicen
 
-FROM prom/prometheus:${PROMETHEUS_VERSION} AS prometheus
+FROM prom/prometheus:v3.13.2 AS prometheus
 
-FROM gcr.io/distroless/base-debian12:nonroot
+FROM gcr.io/distroless/base-debian12 AS runtime-base
 COPY --from=build /out/tubicen /usr/local/bin/tubicen
 COPY --from=prometheus /bin/promtool /usr/local/bin/promtool
-USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/tubicen"]
 CMD ["help"]
+
+# Local and scheduled container runs do not need workspace write access as root.
+FROM runtime-base AS cli
+USER nonroot:nonroot
+
+# GitHub mounts GITHUB_WORKSPACE for a container action using the default user.
+FROM runtime-base AS action

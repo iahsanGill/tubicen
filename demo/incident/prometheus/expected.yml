@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 2s
+  evaluation_interval: 5s
+  external_labels:
+    rule_version: expected
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [alertmanager:9093]
+
+scrape_configs:
+  - job_name: checkout
+    static_configs:
+      - targets: [checkout-1:8080]
+        labels:
+          service: checkout
+          environment: production
+          replica: checkout-1
+      - targets: [checkout-2:8080]
+        labels:
+          service: checkout
+          environment: production
+          replica: checkout-2
