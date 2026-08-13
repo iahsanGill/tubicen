@@ -1,0 +1,21 @@
+groups:
+  - name: checkout-slo
+    interval: 5s
+    rules:
+      - alert: CheckoutErrorBudgetBurn
+        expr: avg_over_time(checkout_error_ratio{service="checkout",environment="production"}[30s]) > 0.05
+        for: 15s
+        labels:
+          severity: page
+          team: payments
+        annotations:
+          summary: Checkout error ratio is above five percent
+
+      - alert: CheckoutReplicaDown
+        expr: min by (service) (up{service="checkout",environment="production"}) == 0
+        for: 10s
+        labels:
+          severity: ticket
+          team: payments
+        annotations:
+          summary: At least one checkout replica is unavailable

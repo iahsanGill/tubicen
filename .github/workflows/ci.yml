@@ -74,3 +74,12 @@ jobs:
         run: |
           docker run --rm tubicen:ci version
           docker run --rm --entrypoint /usr/local/bin/promtool tubicen:ci --version
+
+  production-demo:
+    name: Production-style monitoring demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run live Prometheus and Alertmanager demo
+        run: ./demo/verify.sh

@@ -16,7 +16,7 @@
 
 It parses each PromQL expression into an AST, makes one controlled change, writes an isolated rule file, and runs the official Prometheus checker and test engine. A mutant that still passes is a concrete gap in the alert test suite.
 
-![Tubicen HTML campaign report](docs/assets/tubicen-report.png)
+![Tubicen HTML test report](docs/assets/tubicen-report.png)
 
 ## Why this exists
 
@@ -29,7 +29,26 @@ The example in this repository makes that visible:
 | One happy-path outage | 9 | 12 | 42.9% |
 | Boundary and recovery cases | 21 | 0 | 100.0% |
 
-Both suites pass against the original rules. Only the second one proves that the important semantics are protected.
+Both suites pass against the original rules. Only the second one catches all of the tested rule changes.
+
+## Production-style Docker demo
+
+The repository includes a complete local monitoring setup with two checkout service replicas, Prometheus, Alertmanager, a webhook receiver, and Tubicen as an on-demand CI tool.
+
+```bash
+./demo/verify.sh
+```
+
+The script starts the stack, confirms that Prometheus can scrape both replicas, changes one replica to a 20% error ratio, stops the other replica, and waits until both checkout alerts are firing. It then shows the weak rule tests failing Tubicen's 80% gate and the stronger tests passing a 100% gate.
+
+This demonstrates the distinction the project is built around:
+
+- Live Prometheus proves that the current alert fires for a real scraped failure.
+- Tubicen proves whether the rule test suite would catch important mistakes before a changed rule is deployed.
+
+See [demo/README.md](demo/README.md) for the architecture, commands, ports, and cleanup instructions.
+
+![Live Prometheus alerts from the Docker demo](docs/assets/prometheus-live-alerts.png)
 
 ## Quick start
 
@@ -103,7 +122,7 @@ flowchart LR
     C --> D["One isolated rule file per mutant"]
     T["promtool unit tests"] --> E["Reference test runner"]
     D --> E
-    E --> F["Killed / survived / error"]
+    E --> F["Caught / not caught / error"]
     F --> G["Score and quality gate"]
     G --> H["Terminal · JSON · JUnit · SARIF · HTML"]
 ```

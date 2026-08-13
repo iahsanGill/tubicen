@@ -5,7 +5,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf none)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(BUILD_DATE)
 
-.PHONY: all build test race vet fmt-check check e2e reports clean
+.PHONY: all build test race vet fmt-check check e2e demo reports clean
 
 all: check build
 
@@ -34,6 +34,9 @@ e2e: build
 		--promtool $(PROMTOOL) \
 		--threshold 100 \
 		--quiet
+
+demo:
+	./demo/verify.sh
 
 reports: build
 	mkdir -p dist

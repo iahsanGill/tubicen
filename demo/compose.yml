@@ -1,0 +1,53 @@
+name: tubicen-demo
+
+services:
+  checkout-1:
+    build:
+      context: ..
+      dockerfile: demo/checkout-api.Dockerfile
+    ports:
+      - "${TUBICEN_CHECKOUT_1_PORT:-18080}:8080"
+
+  checkout-2:
+    build:
+      context: ..
+      dockerfile: demo/checkout-api.Dockerfile
+    ports:
+      - "${TUBICEN_CHECKOUT_2_PORT:-18081}:8080"
+
+  prometheus:
+    image: prom/prometheus:v3.13.2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "${TUBICEN_PROMETHEUS_PORT:-19090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    depends_on:
+      - checkout-1
+      - checkout-2
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:v0.33.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    ports:
+      - "${TUBICEN_ALERTMANAGER_PORT:-19093}:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+
+  tubicen:
+    profiles: [tools]
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace:ro
+      - ./output:/output
+    entrypoint: ["tubicen"]

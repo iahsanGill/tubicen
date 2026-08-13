@@ -1,0 +1,104 @@
+rule_files:
+  - ../prometheus/alerts.yml
+
+evaluation_interval: 5s
+
+tests:
+  - name: sustained errors fire only after the configured delay
+    interval: 5s
+    input_series:
+      - series: 'checkout_error_ratio{service="checkout",environment="production"}'
+        values: '0.10x30'
+      - series: 'checkout_error_ratio{service="checkout",environment="staging"}'
+        values: '0.90x30'
+    alert_rule_test:
+      - eval_time: 10s
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts: []
+      - eval_time: 20s
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              environment: production
+              service: checkout
+              severity: page
+              team: payments
+            exp_annotations:
+              summary: Checkout error ratio is above five percent
+
+  - name: exact threshold does not fire
+    interval: 5s
+    input_series:
+      - series: 'checkout_error_ratio{service="checkout",environment="production"}'
+        values: '0.05x20'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts: []
+
+  - name: four percent remains below the threshold
+    interval: 5s
+    input_series:
+      - series: 'checkout_error_ratio{service="checkout",environment="production"}'
+        values: '0.04x20'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts: []
+
+  - name: the thirty second window keeps recent errors visible
+    interval: 5s
+    input_series:
+      - series: 'checkout_error_ratio{service="checkout",environment="production"}'
+        values: '0.10x6 0x12'
+    alert_rule_test:
+      - eval_time: 40s
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              environment: production
+              service: checkout
+              severity: page
+              team: payments
+            exp_annotations:
+              summary: Checkout error ratio is above five percent
+
+  - name: the thirty second window does not delay a sustained error rate
+    interval: 5s
+    input_series:
+      - series: 'checkout_error_ratio{service="checkout",environment="production"}'
+        values: '0x6 0.10x20'
+    alert_rule_test:
+      - eval_time: 1m5s
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              environment: production
+              service: checkout
+              severity: page
+              team: payments
+            exp_annotations:
+              summary: Checkout error ratio is above five percent
+
+  - name: one failed production replica fires after ten seconds
+    interval: 5s
+    input_series:
+      - series: 'up{service="checkout",environment="production",instance="checkout-1"}'
+        values: '1x20'
+      - series: 'up{service="checkout",environment="production",instance="checkout-2"}'
+        values: '0x20'
+      - series: 'up{service="checkout",environment="staging",instance="checkout-staging-1"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 5s
+        alertname: CheckoutReplicaDown
+        exp_alerts: []
+      - eval_time: 15s
+        alertname: CheckoutReplicaDown
+        exp_alerts:
+          - exp_labels:
+              service: checkout
+              severity: ticket
+              team: payments
+            exp_annotations:
+              summary: At least one checkout replica is unavailable

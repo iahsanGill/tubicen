@@ -4,3 +4,5 @@
 /.tubicen/
 *.prof
 .DS_Store
+/demo/output/*
+!/demo/output/.gitkeep
