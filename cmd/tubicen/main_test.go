@@ -65,6 +65,28 @@ func TestRunRequiresInputs(t *testing.T) {
 	}
 }
 
+func TestRunRejectsInvalidExecutionFlags(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		flag string
+		want string
+	}{
+		{name: "workers", flag: "--workers=-1", want: "--workers must not be negative"},
+		{name: "timeout", flag: "--timeout=-1s", want: "--timeout must be positive"},
+		{name: "limit", flag: "--limit=-1", want: "--limit must not be negative"},
+		{name: "threshold", flag: "--threshold=101", want: "--threshold must be between 0 and 100"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := execute(context.Background(), []string{"run", "--rules", "alerts.yml", "--tests", "tests.yml", test.flag}, &stdout, &stderr)
+			if code != 2 || !strings.Contains(stderr.String(), test.want) {
+				t.Fatalf("exit code = %d, stderr = %q", code, stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunReturnsOneWhenMutationGateFails(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test helper uses a POSIX shell")

@@ -82,55 +82,32 @@ func checkRepository(ctx context.Context, args []string, stdout, stderr io.Write
 		fmt.Fprintf(stderr, "tubicen: %v\n", err)
 		return 2
 	}
-	return runCampaign(ctx, campaignArgs(settings), stdout, stderr)
-}
-
-func campaignArgs(settings config.Settings) []string {
-	var args []string
-	for _, path := range settings.Rules {
-		args = append(args, "--rules", path)
-	}
-	for _, path := range settings.Tests {
-		args = append(args, "--tests", path)
-	}
-	if settings.Promtool != "" {
-		args = append(args, "--promtool", settings.Promtool)
-	}
-	if settings.Workers != 0 {
-		args = append(args, "--workers", fmt.Sprint(settings.Workers))
-	}
+	timeout := 30 * time.Second
 	if settings.Timeout != "" {
-		args = append(args, "--timeout", settings.Timeout)
-	}
-	if settings.Threshold != nil {
-		args = append(args, "--threshold", fmt.Sprint(*settings.Threshold))
-	}
-	if len(settings.Only) != 0 {
-		args = append(args, "--only", strings.Join(settings.Only, ","))
-	}
-	if len(settings.Skip) != 0 {
-		args = append(args, "--skip", strings.Join(settings.Skip, ","))
-	}
-	if settings.Limit != 0 {
-		args = append(args, "--limit", fmt.Sprint(settings.Limit))
-	}
-	if settings.SurvivorsDir != "" {
-		args = append(args, "--survivors", settings.SurvivorsDir)
-	}
-	for _, output := range []struct{ flag, path string }{
-		{flag: "--json", path: settings.Reports.JSON},
-		{flag: "--junit", path: settings.Reports.JUnit},
-		{flag: "--sarif", path: settings.Reports.SARIF},
-		{flag: "--html", path: settings.Reports.HTML},
-	} {
-		if output.path != "" {
-			args = append(args, output.flag, output.path)
+		timeout, err = time.ParseDuration(settings.Timeout)
+		if err != nil {
+			fmt.Fprintf(stderr, "tubicen: invalid timeout: %v\n", err)
+			return 2
 		}
 	}
-	if settings.Quiet {
-		args = append(args, "--quiet")
+	threshold := 80.0
+	if settings.Threshold != nil {
+		threshold = *settings.Threshold
 	}
-	return args
+	options := campaign.Options{
+		RuleFiles:     settings.Rules,
+		TestFiles:     settings.Tests,
+		Promtool:      settings.Promtool,
+		Workers:       settings.Workers,
+		Timeout:       timeout,
+		Threshold:     threshold,
+		OnlyOperators: settings.Only,
+		SkipOperators: settings.Skip,
+		Limit:         settings.Limit,
+		SurvivorsDir:  settings.SurvivorsDir,
+		ToolVersion:   version,
+	}
+	return executeCampaign(ctx, options, settings.Reports, settings.Quiet, stdout, stderr)
 }
 
 func runCampaign(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -169,6 +146,22 @@ func runCampaign(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		fmt.Fprintln(stderr, "both --rules and --tests are required")
 		return 2
 	}
+	if *workers < 0 {
+		fmt.Fprintln(stderr, "--workers must not be negative")
+		return 2
+	}
+	if *timeout <= 0 {
+		fmt.Fprintln(stderr, "--timeout must be positive")
+		return 2
+	}
+	if *limit < 0 {
+		fmt.Fprintln(stderr, "--limit must not be negative")
+		return 2
+	}
+	if *threshold < 0 || *threshold > 100 {
+		fmt.Fprintln(stderr, "--threshold must be between 0 and 100")
+		return 2
+	}
 
 	options := campaign.Options{
 		RuleFiles:     ruleFiles,
@@ -183,7 +176,12 @@ func runCampaign(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		SurvivorsDir:  *survivors,
 		ToolVersion:   version,
 	}
-	if !*quiet {
+	outputs := config.Reports{JSON: *jsonPath, JUnit: *junitPath, SARIF: *sarifPath, HTML: *htmlPath}
+	return executeCampaign(ctx, options, outputs, *quiet, stdout, stderr)
+}
+
+func executeCampaign(ctx context.Context, options campaign.Options, outputs config.Reports, quiet bool, stdout, stderr io.Writer) int {
+	if !quiet {
 		options.Progress = func(completed, total int, result domain.Result) {
 			fmt.Fprintf(stderr, "[%d/%d] %-10s %s/%s — %s\n", completed, total, progressStatus(result.Status), result.Mutation.Group, result.Mutation.Alert, report.ChangeType(result.Mutation.Operator))
 		}
@@ -202,10 +200,10 @@ func runCampaign(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		path   string
 		render func(io.Writer, domain.Report) error
 	}{
-		{path: *jsonPath, render: report.JSON},
-		{path: *junitPath, render: report.JUnit},
-		{path: *sarifPath, render: report.SARIF},
-		{path: *htmlPath, render: report.HTML},
+		{path: outputs.JSON, render: report.JSON},
+		{path: outputs.JUnit, render: report.JUnit},
+		{path: outputs.SARIF, render: report.SARIF},
+		{path: outputs.HTML, render: report.HTML},
 	}
 	for _, output := range reports {
 		if err := report.WriteFile(output.path, result, output.render); err != nil {

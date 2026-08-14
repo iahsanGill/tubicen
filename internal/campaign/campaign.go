@@ -50,7 +50,16 @@ func Run(ctx context.Context, options Options) (domain.Report, error) {
 	if options.Threshold < 0 || options.Threshold > 100 {
 		return domain.Report{}, fmt.Errorf("threshold must be between 0 and 100")
 	}
-	if options.Workers <= 0 {
+	if options.Workers < 0 {
+		return domain.Report{}, fmt.Errorf("workers must not be negative")
+	}
+	if options.Timeout < 0 {
+		return domain.Report{}, fmt.Errorf("timeout must not be negative")
+	}
+	if options.Limit < 0 {
+		return domain.Report{}, fmt.Errorf("limit must not be negative")
+	}
+	if options.Workers == 0 {
 		options.Workers = min(runtime.NumCPU(), 8)
 	}
 	if options.ToolVersion == "" {
