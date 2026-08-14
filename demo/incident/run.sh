@@ -4,7 +4,9 @@ export DOCKER_CLI_HINTS=false
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_dir=$(CDPATH= cd -- "$script_dir/../.." && pwd)
-compose="docker compose --ansi never -f $script_dir/compose.yml"
+compose() {
+  docker compose --ansi never -f "$script_dir/compose.yml" "$@"
+}
 
 checkout_url="http://localhost:${TUBICEN_INCIDENT_CHECKOUT_1_PORT:-18180}"
 candidate_url="http://localhost:${TUBICEN_INCIDENT_CANDIDATE_PORT:-19190}"
@@ -13,7 +15,7 @@ alertmanager_url="http://localhost:${TUBICEN_INCIDENT_ALERTMANAGER_PORT:-19193}"
 
 cleanup() {
   if [ "${KEEP_INCIDENT:-0}" != "1" ]; then
-    $compose --profile tools down --volumes --remove-orphans >/dev/null 2>&1 || true
+    compose --profile tools down --volumes --remove-orphans >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT INT TERM
@@ -90,12 +92,12 @@ printf 'Problem: a pull request changes the checkout alert from\n'
 printf '"page when any replica is down" to "page only when every replica is down."\n\n'
 
 printf 'Preparing the same Tubicen container used by CI.\n'
-$compose --profile tools build tubicen >/dev/null
+compose --profile tools build tubicen >/dev/null
 printf 'Container ready.\n\n'
 
 printf 'STEP 1 - The old test gives false confidence\n'
 printf 'The old test contains one failed replica. Both versions of the rule pass it.\n'
-$compose --profile tools run --rm --entrypoint promtool tubicen \
+compose --profile tools run --rm --entrypoint promtool tubicen \
   test rules demo/incident/tests/before-candidate.yml >/dev/null
 printf 'RESULT: the harmful pull-request version passes the existing test.\n\n'
 
@@ -103,7 +105,7 @@ printf 'STEP 2 - The pull-request check finds the missing protection\n'
 printf 'Tubicen uses the repository policy and asks whether the old test can tell\n'
 printf 'the healthiest-replica rule from the least-healthy-replica rule.\n'
 set +e
-$compose --profile tools run --rm tubicen check \
+compose --profile tools run --rm tubicen check \
   --config demo/incident/.tubicen-pull-request.yml
 old_score=$?
 set -e
@@ -116,7 +118,7 @@ printf 'RESULT: Tubicen reports that the existing test does not catch this chang
 printf 'STEP 3 - Reproduce the production incident\n'
 printf 'Starting two checkout replicas and two copies of Prometheus.\n'
 printf 'One uses the pull-request rule. One uses the correct rule.\n'
-$compose up -d --build checkout-1 checkout-2 alertmanager prometheus-candidate prometheus-expected >/dev/null
+compose up -d --build checkout-1 checkout-2 alertmanager prometheus-candidate prometheus-expected >/dev/null
 wait_for_url "$checkout_url/healthz" 60
 wait_for_url "$candidate_url/-/ready" 60
 wait_for_url "$expected_url/-/ready" 60
@@ -124,7 +126,7 @@ wait_for_url "$alertmanager_url/-/ready" 60
 wait_for_two_targets "$candidate_url"
 wait_for_two_targets "$expected_url"
 printf 'Both checkout replicas are running and being watched.\n'
-$compose stop checkout-2 >/dev/null
+compose stop checkout-2 >/dev/null
 printf 'checkout-2 has stopped. checkout-1 is still serving traffic.\n'
 wait_for_comparison
 wait_for_page
@@ -134,7 +136,7 @@ printf 'RESULT WITH CORRECT RULE: alert is firing; Alertmanager sends the page.\
 printf 'STEP 4 - Add the missing test\n'
 printf 'The new test describes the real failure: one healthy replica and one failed replica.\n'
 set +e
-$compose --profile tools run --rm --entrypoint promtool tubicen \
+compose --profile tools run --rm --entrypoint promtool tubicen \
   test rules demo/incident/tests/after-candidate.yml >/dev/null 2>&1
 candidate_new_test=$?
 set -e
@@ -143,7 +145,7 @@ if [ "$candidate_new_test" -ne 1 ]; then
   exit 1
 fi
 printf 'RESULT: the harmful pull-request rule now fails before deployment.\n'
-$compose --profile tools run --rm tubicen check \
+compose --profile tools run --rm tubicen check \
   --config demo/incident/.tubicen-protected.yml
 printf 'RESULT: the correct rule passes, and Tubicen confirms the new test catches the harmful change.\n\n'
 
