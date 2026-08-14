@@ -126,7 +126,7 @@ The generator changes behavior that commonly causes alert incidents: inequality 
 
 Suites that do not load the current target rule are skipped for that mutant. If none of the supplied suites references the target, the result is an execution error rather than a misleading survivor.
 
-The mutant first passes through `promtool check rules`. Only a valid rule is eligible for scoring. Test files run sequentially for that mutant and stop at the first test failure, while separate mutants run concurrently through a bounded worker pool.
+The mutant first passes through `promtool check rules`. Only a valid rule is eligible for scoring. Test files run sequentially for that mutant and stop at the first failed assertion, while separate mutants run concurrently through a bounded worker pool. Tubicen reads promtool's JUnit result so a failed assertion is counted as `killed` and a test-file or setup error is counted as `error`.
 
 ### 5. Outcome model
 

@@ -3,6 +3,7 @@ package promtool
 import (
 	"bytes"
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"os"
@@ -110,10 +111,17 @@ func (r Runner) Execute(ctx context.Context, file *rules.File, mutation domain.M
 		}
 		tested = true
 
-		output, err := r.command(ctx, "test", "rules", preparedPath)
+		junitPath := filepath.Join(workspace, fmt.Sprintf("junit-%03d.xml", i))
+		output, err := r.command(ctx, "test", "--junit", junitPath, "rules", preparedPath)
 		if err != nil {
-			result.Status = statusForTestError(err)
-			result.Output = output
+			result.Status, err = statusForTestError(err, junitPath)
+			result.Output = strings.TrimSpace(output)
+			if err != nil {
+				if result.Output != "" {
+					result.Output += "\n"
+				}
+				result.Output += err.Error()
+			}
 			result.TestFile = testFile
 			result.Duration = time.Since(started)
 			return result
@@ -159,15 +167,40 @@ func statusForError(err error) domain.Status {
 	return domain.StatusError
 }
 
-func statusForTestError(err error) domain.Status {
+func statusForTestError(err error, junitPath string) (domain.Status, error) {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return domain.StatusTimeout
+		return domain.StatusTimeout, nil
 	}
 	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return domain.StatusKilled
+	if !errors.As(err, &exitErr) {
+		return domain.StatusError, nil
 	}
-	return domain.StatusError
+	data, readErr := os.ReadFile(junitPath)
+	if readErr != nil {
+		return domain.StatusError, fmt.Errorf("read promtool JUnit result: %w", readErr)
+	}
+	var document struct {
+		Suites []struct {
+			Failures int `xml:"failures,attr"`
+			Errors   int `xml:"errors,attr"`
+		} `xml:"testsuite"`
+	}
+	if unmarshalErr := xml.Unmarshal(data, &document); unmarshalErr != nil {
+		return domain.StatusError, fmt.Errorf("parse promtool JUnit result: %w", unmarshalErr)
+	}
+	failures := 0
+	executionErrors := 0
+	for _, suite := range document.Suites {
+		failures += suite.Failures
+		executionErrors += suite.Errors
+	}
+	if executionErrors > 0 {
+		return domain.StatusError, fmt.Errorf("promtool reported %d test execution error(s)", executionErrors)
+	}
+	if failures > 0 {
+		return domain.StatusKilled, nil
+	}
+	return domain.StatusError, fmt.Errorf("promtool exited unsuccessfully without a failed assertion")
 }
 
 func prepareTestFile(source, originalRule, mutatedRule, destination string) (bool, error) {

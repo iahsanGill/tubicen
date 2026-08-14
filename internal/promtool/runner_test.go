@@ -73,7 +73,16 @@ func TestExecuteClassifiesKilledAndSurvivingMutants(t *testing.T) {
 	script := `#!/bin/sh
 if [ "$1" = "--version" ]; then echo "promtool test-double"; exit 0; fi
 if [ "$1" = "check" ]; then exit 0; fi
-if grep -R -F -q 'error_ratio > 0.5' "$(dirname "$3")"; then echo "FAILED: expectation changed"; exit 1; fi
+if grep -R -F -q 'error_ratio > 0.5' "$(dirname "$3")"; then
+  printf '<testsuites><testsuite tests="1" failures="1" errors="0"><testcase name="alert"><failure>expectation changed</failure></testcase></testsuite></testsuites>' > "$3"
+  echo "FAILED: expectation changed"
+  exit 1
+fi
+if grep -R -F -q 'error_ratio > 2' "$(dirname "$3")"; then
+  printf '<testsuites><testsuite tests="1" failures="0" errors="1"><testcase name="alert"><error>evaluation failed</error></testcase></testsuite></testsuites>' > "$3"
+  echo "FAILED: evaluation failed"
+  exit 1
+fi
 exit 0
 `
 	if err := os.WriteFile(helper, []byte(script), 0o700); err != nil {
@@ -101,6 +110,14 @@ exit 0
 	}, []string{testPath}, "")
 	if survived.Status != domain.StatusSurvived {
 		t.Fatalf("got status %s, output %q", survived.Status, survived.Output)
+	}
+
+	failed := runner.Execute(context.Background(), file, domain.Mutation{
+		ID: "error", RuleFile: rulePath, Group: "api", Alert: "HighErrorRate",
+		GroupIndex: 0, RuleIndex: 0, Expression: "error_ratio > 2",
+	}, []string{testPath}, "")
+	if failed.Status != domain.StatusError || !strings.Contains(failed.Output, "test execution error") {
+		t.Fatalf("unexpected execution failure: %#v", failed)
 	}
 }
 

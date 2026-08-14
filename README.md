@@ -185,7 +185,7 @@ These are generated from the PromQL syntax tree, not by string replacement. Ever
 
 ## Local installation and advanced use
 
-Requirements: Go 1.25 or newer and `promtool` on `PATH`.
+Requirements: Go 1.25 or newer and a `promtool` version with `test --junit` support on `PATH`.
 
 ```bash
 go install github.com/iahsanGill/tubicen/cmd/tubicen@latest
